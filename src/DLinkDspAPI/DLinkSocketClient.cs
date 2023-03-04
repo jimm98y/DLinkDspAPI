@@ -18,13 +18,9 @@ namespace DLinkDspAPI
 
         private const string HNAP1_XMLNS = "http://purenetworks.com/HNAP1/";
         private const string HNAP_LOGIN_METHOD = "Login";
-        private const int HNAP_DEFAULT_PORT = 80;
 
-        private readonly string _host;
         private readonly string _hnapNamespace;
         private readonly HnapAuthenticationDescription _authentication = null;
-        private bool _isHttpsEnabled = false;
-        private int _port = HNAP_DEFAULT_PORT;
 
         /// <summary>
         /// Ctor.
@@ -32,21 +28,15 @@ namespace DLinkDspAPI
         /// <param name="host">Host.</param>
         /// <param name="userName">User name.</param>
         /// <param name="password">Password.</param>
-        /// <param name="port">Port.</param>
-        /// <param name="isHttpsEnabled">Is HTTPS enabled?</param>
-        public DLinkSocketClient(string host, string userName, string password, int port = 80, bool isHttpsEnabled = false)
+        public DLinkSocketClient(string host, string userName, string password)
         {
             if (string.IsNullOrEmpty(host))
                 throw new ArgumentNullException("host");
 
-            _isHttpsEnabled = isHttpsEnabled;
-            _port = port;
-            _host = host;
-
             _authentication = new HnapAuthenticationDescription();
             _authentication.User = userName;
             _authentication.Password = password;
-            _authentication.Uri = new Uri(string.Format("{0}://{1}{2}/HNAP1", GetProtocol(_isHttpsEnabled), host, GetPort(_isHttpsEnabled)));
+            _authentication.Uri = new Uri($"http://{host}/HNAP1");
 
             // prepare namespaces in the syntax that is necessary for the XML parser
             _hnapNamespace = $"{{{HNAP1_XMLNS}}}";
@@ -459,16 +449,6 @@ namespace DLinkDspAPI
         public Task<string> SetTriggerADICAsync()
         {
             return SoapActionAsync("SettriggerADIC", _hnapNamespace + "SettriggerADICResult", GetRequestBody("SettriggerADIC", HNAP1_XMLNS, ""));
-        }
-
-        private static string GetProtocol(bool isHttpsEnabled)
-        {
-            return isHttpsEnabled ? "https" : "http";
-        }
-
-        private string GetPort(bool isHttpsEnabled)
-        {
-            return isHttpsEnabled ? string.Format(":{0}", _port) : string.Empty;
         }
     }
 }

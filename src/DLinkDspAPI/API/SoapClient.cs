@@ -9,7 +9,7 @@ namespace DLinkDspAPI.API
     /// <summary>
     /// Soap client.
     /// </summary>
-    internal abstract class SoapClient : IDisposable
+    public abstract class SoapClient : IDisposable
     {
         protected const string SOAP_XMLNS = "http://schemas.xmlsoap.org/soap/envelope/";
 
@@ -25,7 +25,7 @@ namespace DLinkDspAPI.API
             _client = new HttpClient(new HttpClientHandler() { UseCookies = false }); // disable cookies in order to be able to add Cookie header manually
 
             // prepare namespaces in the syntax that is necessary for the XML parser
-            _soapNamespace = "{" + SOAP_XMLNS + "}";
+            _soapNamespace = $"{{{SOAP_XMLNS}}}";
         }
 
         protected abstract Uri GetServiceUri();
@@ -53,14 +53,12 @@ namespace DLinkDspAPI.API
             }
         }
 
-        protected virtual void AppendRequestHeaders(string method, HttpRequestMessage request)
-        { }
+        protected abstract void AppendRequestHeaders(string method, HttpRequestMessage request);
 
         protected async Task<string> ReadResponseValueAsync(HttpResponseMessage response, string responseElement)
         {
             try
             {
-                // parse the message
                 XDocument xmlResponse = XDocument.Parse(await response.Content.ReadAsStringAsync());
                 XElement xmlEnvelope = xmlResponse.Element(XName.Get(_soapNamespace + "Envelope"));
                 XElement xmlBody = xmlEnvelope.Element(XName.Get(_soapNamespace + "Body"));

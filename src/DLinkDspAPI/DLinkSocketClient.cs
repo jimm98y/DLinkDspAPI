@@ -5,49 +5,26 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using DLinkDspAPI.API;
 
-namespace DLinkDspAPI.API
+namespace DLinkDspAPI
 {
     /// <summary>
-    /// HNAP socket client.
+    /// DLink smart socket client. Connects to the socket in the local network using the HNAP protocol.
     /// </summary>
-    internal class HnapClient : SoapClient
+    public class DLinkSocketClient : SoapClient
     {
-        public static class MacAlgorithmNames
-        {
-            public static string HmacMd5 = "HmacMd5";
-        }
+        private const string HmacMd5 = "HmacMd5";
 
         private const string HNAP1_XMLNS = "http://purenetworks.com/HNAP1/";
         private const string HNAP_LOGIN_METHOD = "Login";
-        private const string HNAP_URI_FORMAT = "{0}://{1}{2}/HNAP1";
         private const int HNAP_DEFAULT_PORT = 80;
 
+        private readonly string _host;
         private readonly string _hnapNamespace;
-
         private readonly HnapAuthenticationDescription _authentication = null;
-
         private bool _isHttpsEnabled = false;
-
         private int _port = HNAP_DEFAULT_PORT;
-
-        private string _host;
-
-        /// <summary>
-        /// The host name.
-        /// </summary>
-        public string Host { get { return _host; } }
-
-        private bool isReadOnly;
-
-        /// <summary>
-        /// Is the client read only?
-        /// </summary>
-        public bool IsReadOnly
-        {
-            get { return isReadOnly; }
-            set { isReadOnly = value; }
-        }
 
         /// <summary>
         /// Ctor.
@@ -57,13 +34,11 @@ namespace DLinkDspAPI.API
         /// <param name="password">Password.</param>
         /// <param name="port">Port.</param>
         /// <param name="isHttpsEnabled">Is HTTPS enabled?</param>
-        /// <param name="isReadOnly">Is read only?</param>
-        public HnapClient(string host, string userName, string password, int port = 80, bool isHttpsEnabled = false, bool isReadOnly = false)
+        public DLinkSocketClient(string host, string userName, string password, int port = 80, bool isHttpsEnabled = false)
         {
             if (string.IsNullOrEmpty(host))
                 throw new ArgumentNullException("host");
 
-            IsReadOnly = isReadOnly;
             _isHttpsEnabled = isHttpsEnabled;
             _port = port;
             _host = host;
@@ -71,40 +46,28 @@ namespace DLinkDspAPI.API
             _authentication = new HnapAuthenticationDescription();
             _authentication.User = userName;
             _authentication.Password = password;
-            _authentication.Uri = new Uri(string.Format(HNAP_URI_FORMAT, GetProtocol(_isHttpsEnabled), host, GetPort(_isHttpsEnabled)));
+            _authentication.Uri = new Uri(string.Format("{0}://{1}{2}/HNAP1", GetProtocol(_isHttpsEnabled), host, GetPort(_isHttpsEnabled)));
 
             // prepare namespaces in the syntax that is necessary for the XML parser
-            _hnapNamespace = "{" + HNAP1_XMLNS + "}";
+            _hnapNamespace = $"{{{HNAP1_XMLNS}}}";
         }
 
-        /// <summary>
-        /// Get service URI.
-        /// </summary>
-        /// <returns>Service URI.</returns>
         protected override Uri GetServiceUri()
         {
             return _authentication.Uri;
         }
 
-        /// <summary>
-        /// Append request message headers.
-        /// </summary>
-        /// <param name="method">Requested method.</param>
-        /// <param name="request">Request.</param>
         protected override void AppendRequestHeaders(string method, HttpRequestMessage request)
         {
-            request.Headers.Add("SOAPAction", string.Format("\"{0}{1}\"", HNAP1_XMLNS, method));
-            request.Headers.Add("HNAP_AUTH", GetHnapAuth(string.Format("\"{0}{1}\"", HNAP1_XMLNS, method), _authentication.PrivateKey));
-            request.Headers.Add("Cookie", string.Format("uid={0}", _authentication.Cookie));
+            request.Headers.Add("SOAPAction", $"\"{HNAP1_XMLNS}{method}\"");
+            request.Headers.Add("HNAP_AUTH", GetHnapAuth($"\"{HNAP1_XMLNS}{method}\"", _authentication.PrivateKey));
+            request.Headers.Add("Cookie", $"uid={_authentication.Cookie}");
         }
 
         /// <summary>
         /// Login.
         /// </summary>
-        /// <param name="user">User name.</param>
-        /// <param name="password">Password.</param>
-        /// <param name="uri">URI of the device.</param>
-        /// <returns><see cref="true"/> if successful, <see cref="false"/> otherwise.</returns>
+        /// <returns>true if successful, false otherwise.</returns>
         public async Task<bool> LoginAsync()
         {
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, _authentication.Uri);
@@ -112,7 +75,7 @@ namespace DLinkDspAPI.API
             request.Content = new StringContent(body);
             request.Content.Headers.Clear();
             request.Content.Headers.Add("Content-Type", "text/xml; charset=UTF-8");
-            request.Headers.Add("SOAPAction", string.Format("\"{0}{1}\"", HNAP1_XMLNS, HNAP_LOGIN_METHOD));
+            request.Headers.Add("SOAPAction", $"\"{HNAP1_XMLNS}{HNAP_LOGIN_METHOD}\"");
             HttpResponseMessage response = null;
 
             try
@@ -150,7 +113,7 @@ namespace DLinkDspAPI.API
                 _authentication.Challenge = xmlLoginResponse.Elements(XName.Get(_hnapNamespace + "Challenge")).First().Value;
                 _authentication.PublicKey = xmlLoginResponse.Elements(XName.Get(_hnapNamespace + "PublicKey")).First().Value;
                 _authentication.Cookie = xmlLoginResponse.Elements(XName.Get(_hnapNamespace + "Cookie")).First().Value;
-                _authentication.PrivateKey = HashWith(_authentication.Challenge, MacAlgorithmNames.HmacMd5, _authentication.PublicKey + _authentication.Password).ToUpperInvariant();
+                _authentication.PrivateKey = HashWith(_authentication.Challenge, HmacMd5, _authentication.PublicKey + _authentication.Password).ToUpperInvariant();
 
                 string responseValue = await base.SoapActionAsync(HNAP_LOGIN_METHOD, _hnapNamespace + "LoginResult", GetRequestBody(HNAP_LOGIN_METHOD, HNAP1_XMLNS, GetLoginParameters()));
                 return string.Compare("success", responseValue) == 0;
@@ -163,7 +126,7 @@ namespace DLinkDspAPI.API
 
         private string GetLoginParameters()
         {
-            string loginPwd = HashWith(_authentication.Challenge, MacAlgorithmNames.HmacMd5, _authentication.PrivateKey);
+            string loginPwd = HashWith(_authentication.Challenge, HmacMd5, _authentication.PrivateKey);
             return string.Format(
                 "<Action>login</Action>" +
                 "<Username>{0}</Username>" +
@@ -187,8 +150,8 @@ namespace DLinkDspAPI.API
         {
             var currentTime = DateTime.Now;
             var timeStamp = Math.Ceiling(currentTime.Ticks / 10000000d);
-            var auth = HashWith(timeStamp + soapAction, MacAlgorithmNames.HmacMd5, privateKey);
-            return auth.ToUpperInvariant() + " " + timeStamp;
+            var auth = HashWith(timeStamp + soapAction, HmacMd5, privateKey);
+            return $"{auth.ToUpperInvariant()} {timeStamp}";
         }
 
         protected override async Task<string> SoapActionAsync(string method, string responseElement, string body)
@@ -205,7 +168,7 @@ namespace DLinkDspAPI.API
 
         private static string HashWith(string input, string hashName, string key)
         {
-            if (hashName.CompareTo(MacAlgorithmNames.HmacMd5) == 0)
+            if (hashName.CompareTo(HmacMd5) == 0)
             {
                 HMACMD5 md5Hasher = new HMACMD5(Encoding.UTF8.GetBytes(key));
                 return BitConverter.ToString(md5Hasher.ComputeHash(Encoding.UTF8.GetBytes(input))).Replace("-", string.Empty);
@@ -232,6 +195,7 @@ namespace DLinkDspAPI.API
             byte[] encrypted = encryptor.TransformFinalBlock(Encoding.UTF8.GetBytes(input), 0, input.Length);
             return BitConverter.ToString(encrypted);
         }
+
         private string GetModuleParameters(int module)
         {
             return string.Format("<ModuleID>{0}</ModuleID>", module);
@@ -254,7 +218,7 @@ namespace DLinkDspAPI.API
 
         private string GetRadioParameters(string radio)
         {
-            return string.Format("<RadioID>{0}</RadioID>", radio);
+            return $"<RadioID>{radio}</RadioID>";
         }
 
         private string GetAPClientParameters(string SSID = "My_Network", string macAddress = "XX:XX:XX:XX:XX:XX", string password = "password", bool isEnabled = true, string radioID = "RADIO_2.4GHz", int channelWidth = 0)
@@ -284,7 +248,7 @@ namespace DLinkDspAPI.API
 
         private string GetGroupParameters(int group)
         {
-            return string.Format("<ModuleGroupID>{0}</ModuleGroupID>", group);
+            return $"<ModuleGroupID>{group}</ModuleGroupID>";
         }
 
         private string GetTemperatureSettingsParameters(int module, string nickName = "TemperatureMonitor 3", string description = "Temperature Monitor 3", string upperBound = "80", string lowerBound = "Not Available", bool opsStatus = true)
@@ -320,44 +284,34 @@ namespace DLinkDspAPI.API
         /// <summary>
         /// Turn the socket on.
         /// </summary>
-        /// <returns>OK if successful.</returns>
+        /// <returns>true if successful, false otherwise.</returns>
         public async Task<bool> TurnOnAsync()
         {
-            if (!IsReadOnly)
-            {
-                string result = await SoapActionAsync("SetSocketSettings", _hnapNamespace + "SetSocketSettingsResult", GetRequestBody("SetSocketSettings", HNAP1_XMLNS, GetControlParameters(1, true)));
+            string result = await SoapActionAsync("SetSocketSettings", _hnapNamespace + "SetSocketSettingsResult", GetRequestBody("SetSocketSettings", HNAP1_XMLNS, GetControlParameters(1, true)));
 
-                if (!string.IsNullOrEmpty(result))
-                    return "OK".CompareTo(result) == 0;
-                else
-                    return false;
-            }
+            if (!string.IsNullOrEmpty(result))
+                return "OK".CompareTo(result) == 0;
             else
-            {
                 return false;
-            }
-        }
-
-        public async Task<bool> TurnOffAsync()
-        {
-            if (!IsReadOnly)
-            {
-                string result = await SoapActionAsync("SetSocketSettings", _hnapNamespace + "SetSocketSettingsResult", GetRequestBody("SetSocketSettings", HNAP1_XMLNS, GetControlParameters(1, false)));
-                if (!string.IsNullOrEmpty(result))
-                    return "OK".CompareTo(result) == 0;
-                else
-                    return false;
-            }
-            else
-            {
-                return false;
-            }
         }
 
         /// <summary>
-        /// Get the current state of the socket.
+        /// Turn the socket off.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>true if successful, false otherwise.</returns>
+        public async Task<bool> TurnOffAsync()
+        {
+            string result = await SoapActionAsync("SetSocketSettings", _hnapNamespace + "SetSocketSettingsResult", GetRequestBody("SetSocketSettings", HNAP1_XMLNS, GetControlParameters(1, false)));
+            if (!string.IsNullOrEmpty(result))
+                return "OK".CompareTo(result) == 0;
+            else
+                return false;
+        }
+
+        /// <summary>
+        /// Gets whether the socket is turned on.
+        /// </summary>
+        /// <returns>Returns true if the socket is turned on, false otherwise.</returns>
         public async Task<bool> GetStateAsync()
         {
             string response = await SoapActionAsync("GetSocketSettings", _hnapNamespace + "OPStatus", GetRequestBody("GetSocketSettings", HNAP1_XMLNS, GetModuleParameters(1)));
@@ -497,9 +451,9 @@ namespace DLinkDspAPI.API
             return SoapActionAsync("GetInternetSettings", _hnapNamespace + "GetInternetSettingsResult", GetRequestBody("GetInternetSettings", HNAP1_XMLNS, ""));
         }
 
-        public Task<string> SetAPClientSettingsAsync()
+        public Task<string> SetAPClientSettingsAsync(string SSID, string macAddress, string password, bool isEnabled, string radioID = "RADIO_2.4GHz", int channelWidth = 0)
         {
-            return SoapActionAsync("SetAPClientSettings", _hnapNamespace + "SetAPClientSettingsResult", GetRequestBody("SetAPClientSettings", HNAP1_XMLNS, GetAPClientParameters()));
+            return SoapActionAsync("SetAPClientSettings", _hnapNamespace + "SetAPClientSettingsResult", GetRequestBody("SetAPClientSettings", HNAP1_XMLNS, GetAPClientParameters(SSID, macAddress, password, isEnabled, radioID, channelWidth)));
         }
 
         public Task<string> SetTriggerADICAsync()

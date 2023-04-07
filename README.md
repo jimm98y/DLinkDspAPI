@@ -8,16 +8,16 @@ It might work with other D-Link devices, but I have no way to test them so they 
 To control the smart socket, use the `DLinkSocketClient`. 
 
 Create `DLinkSocketClient`:
-```
+```cs
 DLinkSocketClient dlinkClient = new DLinkSocketClient("192.168.1.13", "admin", "12345678");
 ```
 
 Default credentials are printed on the smart socket. Sign in:
-```
+```cs
 await dlinkClient.LoginAsync();
 ```
 
 Control the socket:
-```
+```cs
 await dlinkClient.TurnOnAsync();
 ```
